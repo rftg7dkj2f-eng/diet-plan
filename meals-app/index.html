@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="وجباتي">
+<meta name="theme-color" content="#2e9d6a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>وجباتي</title>
+<style>
+:root{
+  --bg:#f4f6f5; --card:#ffffff; --text:#14231c; --muted:#6b7a72; --line:#e2e8e5;
+  --green:#2e9d6a; --green-soft:#e3f5ec; --red:#d64545; --amber:#fff6dd; --amber-text:#7a5a00;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#0f1512; --card:#1a231e; --text:#eaf2ed; --muted:#93a49a; --line:#2a352f;
+        --green:#3dbb83; --green-soft:#1c3328; --red:#ef6b6b; --amber:#3a3118; --amber-text:#f0d27a;}
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Arabic","Segoe UI",Tahoma,sans-serif;font-size:17px}
+#app{max-width:560px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 16px calc(96px + env(safe-area-inset-bottom))}
+h1{font-size:26px;margin:4px 0 2px}
+.sub{color:var(--muted);margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:14px}
+.bar{height:10px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:10px}
+.bar>i{display:block;height:100%;background:var(--green);border-radius:99px;transition:width .25s}
+.meal{display:flex;align-items:center;gap:12px;padding:14px 4px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+.meal:last-child{border-bottom:0}
+.chk{width:30px;height:30px;border-radius:50%;border:2px solid var(--muted);flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px}
+.meal.done .chk{background:var(--green);border-color:var(--green)}
+.meal.done .nm{text-decoration:line-through;color:var(--muted)}
+.nm{flex:1;font-weight:600}
+.meta{color:var(--muted);font-size:14px;font-weight:400}
+.missing{background:var(--amber);color:var(--amber-text);border-color:transparent}
+.missing h3,.ok h3{margin:0 0 6px;font-size:17px}
+.missing ul{margin:6px 0 0;padding-inline-start:20px}
+.ok{background:var(--green-soft);border-color:transparent}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+button{font:inherit;border:0;border-radius:12px;padding:12px 16px;background:var(--green);color:#fff;font-weight:600;cursor:pointer}
+button.sec{background:var(--card);color:var(--text);border:1px solid var(--line)}
+button.danger{background:transparent;color:var(--red);border:1px solid var(--line)}
+button.small{padding:8px 12px;font-size:15px}
+button.full{width:100%}
+.tabs{position:fixed;bottom:0;inset-inline:0;display:flex;background:var(--card);border-top:1px solid var(--line);
+  padding:8px 8px calc(8px + env(safe-area-inset-bottom))}
+.tabs button{flex:1;background:transparent;color:var(--muted);border-radius:10px}
+.tabs button.on{color:var(--green);background:var(--green-soft)}
+.empty{text-align:center;color:var(--muted);padding:26px 10px}
+/* editor */
+.sheet{position:fixed;inset:0;background:var(--bg);overflow:auto;z-index:10;
+  padding:calc(16px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom))}
+.sheet .in{max-width:560px;margin:0 auto}
+.erow{display:grid;grid-template-columns:1fr 70px 70px 40px;gap:6px;margin-bottom:8px;align-items:center}
+.erow.head{color:var(--muted);font-size:13px;margin-bottom:4px}
+input{font:inherit;width:100%;padding:11px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text)}
+.x{padding:8px 0;background:transparent;color:var(--red);border:1px solid var(--line)}
+.tgt{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0 18px}
+label small{display:block;color:var(--muted);margin-bottom:4px}
+.note{color:var(--muted);font-size:14px;margin:6px 0 14px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="tabs">
+  <button id="tabToday" class="on">النهارده</button>
+  <button id="tabPlan">الخطة</button>
+</div>
+
+<script>
+(function(){
+'use strict';
+var KEY='meals-app-v1';
+var tab='today';
+var S=load();
+var editor=null; // {mode, draft, target}
+
+function load(){
+  try{var x=JSON.parse(localStorage.getItem(KEY)); if(x&&x.plan) return x;}catch(e){}
+  return {plan:[],target:{kcal:0,protein:0},days:{}};
+}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+function dkey(){
+  var d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function today(){
+  var k=dkey();
+  if(!S.days[k]){S.days[k]={meals:null,eaten:{}}; prune(); save();}
+  return S.days[k];
+}
+function prune(){
+  var keys=Object.keys(S.days).sort();
+  while(keys.length>60){delete S.days[keys.shift()];}
+}
+function meals(){var t=today(); return t.meals||S.plan;}
+function uid(){return 'm'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function num(v){
+  v=String(v==null?'':v).replace(/[\u0660-\u0669]/g,function(c){return c.charCodeAt(0)-0x660;})
+    .replace(/[\u06f0-\u06f9]/g,function(c){return c.charCodeAt(0)-0x6f0;}).replace('٫','.');
+  var n=parseFloat(v); return isFinite(n)&&n>0?n:0;
+}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function fmt(n){return new Intl.NumberFormat('ar-EG',{maximumFractionDigits:0}).format(Math.round(n));}
+function fmtDate(){return new Date().toLocaleDateString('ar-EG',{weekday:'long',day:'numeric',month:'long'});}
+function meta(m){
+  var p=[]; if(m.kcal) p.push(fmt(m.kcal)+' سعرة'); if(m.protein) p.push(fmt(m.protein)+' جم بروتين');
+  return p.join(' • ');
+}
+
+/* ---------- render ---------- */
+var app=document.getElementById('app');
+function render(){
+  document.getElementById('tabToday').className=tab==='today'?'on':'';
+  document.getElementById('tabPlan').className=tab==='plan'?'on':'';
+  app.innerHTML = tab==='today'?viewToday():viewPlan();
+  bind();
+}
+
+function viewToday(){
+  var t=today(), list=meals();
+  var h='<h1>وجباتي النهارده</h1><p class="sub">'+esc(fmtDate())+(t.meals?' • وجبات معدّلة لليوم ده':'')+'</p>';
+  if(!list.length){
+    return h+'<div class="card empty">لسه مفيش وجبات.<br><br><button id="goPlan">ضيف وجباتك</button></div>';
+  }
+  var done=0, eK=0, eP=0, rest=[];
+  list.forEach(function(m){
+    if(t.eaten[m.id]){done++; eK+=m.kcal||0; eP+=m.protein||0;} else rest.push(m);
+  });
+  var pct=Math.round(done/list.length*100);
+  h+='<div class="card"><b>'+fmt(done)+' من '+fmt(list.length)+' وجبات</b>'+
+     '<div class="bar"><i style="width:'+pct+'%"></i></div></div>';
+
+  h+='<div class="card">';
+  list.forEach(function(m){
+    var on=!!t.eaten[m.id];
+    h+='<div class="meal'+(on?' done':'')+'" data-id="'+esc(m.id)+'">'+
+       '<div class="chk">'+(on?'✓':'')+'</div>'+
+       '<div class="nm">'+esc(m.name)+(meta(m)?'<div class="meta">'+esc(meta(m))+'</div>':'')+'</div></div>';
+  });
+  h+='</div>';
+
+  var tk=num(S.target.kcal), tp=num(S.target.protein);
+  if(!rest.length){
+    h+='<div class="card ok"><h3>✅ كلت كل وجباتك النهارده</h3>'+
+       (eK||eP?'<div class="meta">اتاكل: '+esc(meta({kcal:eK,protein:eP}))+'</div>':'')+'</div>';
+  }else{
+    h+='<div class="card missing"><h3>الناقص النهارده</h3><ul>';
+    rest.forEach(function(m){h+='<li>'+esc(m.name)+(meta(m)?' <span class="meta">('+esc(meta(m))+')</span>':'')+'</li>';});
+    h+='</ul>';
+    var lines=[];
+    if(tk) lines.push(tk>eK?'فاضل '+fmt(tk-eK)+' سعرة من هدفك ('+fmt(tk)+')':'وصلت لهدف السعرات');
+    if(tp) lines.push(tp>eP?'فاضل '+fmt(tp-eP)+' جم بروتين من هدفك ('+fmt(tp)+')':'وصلت لهدف البروتين');
+    if(lines.length) h+='<p style="margin:10px 0 0">'+lines.map(esc).join('<br>')+'</p>';
+    h+='</div>';
+  }
+
+  h+='<div class="row">'+
+     '<button class="sec" id="editToday">عدّل وجبات النهارده</button>'+
+     (t.meals?'<button class="sec" id="resetToPlan">رجّع للخطة</button>':'')+
+     (done?'<button class="danger" id="clearChecks">امسح العلامات</button>':'')+
+     '</div>';
+  return h;
+}
+
+function viewPlan(){
+  var h='<h1>الخطة</h1><p class="sub">وجباتك الأساسية، بتتكرر كل يوم</p>';
+  if(!S.plan.length){
+    h+='<div class="card empty">لسه مفيش خطة.</div>';
+  }else{
+    h+='<div class="card">';
+    S.plan.forEach(function(m){
+      h+='<div class="meal" style="cursor:default"><div class="nm">'+esc(m.name)+(meta(m)?'<div class="meta">'+esc(meta(m))+'</div>':'')+'</div></div>';
+    });
+    h+='</div>';
+  }
+  var tk=num(S.target.kcal), tp=num(S.target.protein);
+  if(tk||tp) h+='<div class="card"><b>هدف اليوم</b><div class="meta">'+esc(meta({kcal:tk,protein:tp}))+'</div></div>';
+  h+='<button class="full" id="editPlan">'+(S.plan.length?'عدّل الخطة':'ضيف وجبات')+'</button>';
+  h+='<p class="note">الخطة بتتحفظ على جهازك بس. لو غيّرتها، اليوم اللي مش معدّل بيمشي بالخطة الجديدة.</p>';
+  return h;
+}
+
+function bind(){
+  var q=function(id){return document.getElementById(id);};
+  Array.prototype.forEach.call(app.querySelectorAll('.meal[data-id]'),function(el){
+    el.onclick=function(){
+      var t=today(), id=el.getAttribute('data-id');
+      if(t.eaten[id]) delete t.eaten[id]; else t.eaten[id]=true;
+      save(); render();
+    };
+  });
+  if(q('goPlan')) q('goPlan').onclick=function(){tab='plan';render();};
+  if(q('editToday')) q('editToday').onclick=function(){openEditor('today');};
+  if(q('editPlan')) q('editPlan').onclick=function(){openEditor('plan');};
+  if(q('resetToPlan')) q('resetToPlan').onclick=function(){
+    if(!confirm('ترجّع وجبات النهارده للخطة الأساسية؟')) return;
+    var t=today(); t.meals=null; t.eaten={}; save(); render();
+  };
+  if(q('clearChecks')) q('clearChecks').onclick=function(){
+    if(!confirm('تمسح علامات النهارده؟')) return;
+    today().eaten={}; save(); render();
+  };
+}
+
+/* ---------- editor ---------- */
+function openEditor(mode){
+  var src=mode==='plan'?S.plan:meals();
+  editor={mode:mode,
+    draft:src.map(function(m){return {id:m.id,name:m.name,kcal:m.kcal||'',protein:m.protein||''};}),
+    target:{kcal:S.target.kcal||'',protein:S.target.protein||''}};
+  if(!editor.draft.length) editor.draft.push({id:uid(),name:'',kcal:'',protein:''});
+  renderEditor();
+}
+function renderEditor(){
+  var old=document.getElementById('sheet'); if(old) old.remove();
+  var s=document.createElement('div'); s.className='sheet'; s.id='sheet';
+  var isPlan=editor.mode==='plan';
+  var h='<div class="in"><h1>'+(isPlan?'عدّل الخطة':'عدّل وجبات النهارده')+'</h1>'+
+    '<p class="note">'+(isPlan?'دي وجباتك الأساسية لكل يوم.':'التعديل ده لليوم ده بس، والخطة الأساسية مش هتتغير.')+
+    ' السعرات والبروتين اختياريين.</p>';
+  if(isPlan){
+    h+='<div class="tgt"><label><small>هدف السعرات اليومي</small><input id="tk" inputmode="decimal" value="'+esc(editor.target.kcal)+'"></label>'+
+       '<label><small>هدف البروتين (جم)</small><input id="tp" inputmode="decimal" value="'+esc(editor.target.protein)+'"></label></div>';
+  }
+  h+='<div class="erow head"><span>الوجبة</span><span>سعرات</span><span>بروتين</span><span></span></div><div id="rows">';
+  editor.draft.forEach(function(m,i){
+    h+='<div class="erow" data-i="'+i+'"><input data-f="name" placeholder="مثلاً: فطار" value="'+esc(m.name)+'">'+
+       '<input data-f="kcal" inputmode="decimal" value="'+esc(m.kcal)+'">'+
+       '<input data-f="protein" inputmode="decimal" value="'+esc(m.protein)+'">'+
+       '<button class="x small" data-del="'+i+'">✕</button></div>';
+  });
+  h+='</div><div class="row" style="margin:12px 0 20px">'+
+     '<button class="sec" id="addRow">+ وجبة</button>'+
+     '<button class="danger" id="clrAll">امسح الكل</button></div>'+
+     '<div class="row"><button id="saveEd" style="flex:1">حفظ</button><button class="sec" id="cancelEd" style="flex:1">إلغاء</button></div></div>';
+  s.innerHTML=h; document.body.appendChild(s);
+
+  Array.prototype.forEach.call(s.querySelectorAll('input[data-f]'),function(inp){
+    inp.oninput=function(){
+      var i=+inp.parentNode.getAttribute('data-i');
+      editor.draft[i][inp.getAttribute('data-f')]=inp.value;
+    };
+  });
+  Array.prototype.forEach.call(s.querySelectorAll('[data-del]'),function(b){
+    b.onclick=function(){editor.draft.splice(+b.getAttribute('data-del'),1); renderEditor();};
+  });
+  var tk=s.querySelector('#tk'), tp=s.querySelector('#tp');
+  if(tk) tk.oninput=function(){editor.target.kcal=tk.value;};
+  if(tp) tp.oninput=function(){editor.target.protein=tp.value;};
+  s.querySelector('#addRow').onclick=function(){
+    editor.draft.push({id:uid(),name:'',kcal:'',protein:''}); renderEditor();
+    var ins=document.querySelectorAll('#rows input[data-f="name"]'); if(ins.length) ins[ins.length-1].focus();
+  };
+  s.querySelector('#clrAll').onclick=function(){
+    if(!confirm('تمسح كل الوجبات في الشاشة دي؟')) return;
+    editor.draft=[{id:uid(),name:'',kcal:'',protein:''}]; renderEditor();
+  };
+  s.querySelector('#cancelEd').onclick=closeEditor;
+  s.querySelector('#saveEd').onclick=saveEditor;
+}
+function closeEditor(){var s=document.getElementById('sheet'); if(s) s.remove(); editor=null; render();}
+function saveEditor(){
+  var clean=editor.draft.filter(function(m){return String(m.name).trim();}).map(function(m){
+    return {id:m.id,name:String(m.name).trim(),kcal:num(m.kcal),protein:num(m.protein)};
+  });
+  if(editor.mode==='plan'){
+    S.plan=clean;
+    S.target={kcal:num(editor.target.kcal),protein:num(editor.target.protein)};
+  }else{
+    var t=today(); t.meals=clean;
+    var ids={}; clean.forEach(function(m){ids[m.id]=1;});
+    Object.keys(t.eaten).forEach(function(id){if(!ids[id]) delete t.eaten[id];});
+  }
+  save(); closeEditor();
+}
+
+/* ---------- tabs & new-day handling ---------- */
+document.getElementById('tabToday').onclick=function(){tab='today';render();};
+document.getElementById('tabPlan').onclick=function(){tab='plan';render();};
+
+var lastDay=dkey();
+function checkNewDay(){
+  if(dkey()!==lastDay){lastDay=dkey(); if(!editor) render();}
+}
+document.addEventListener('visibilitychange',function(){if(!document.hidden) checkNewDay();});
+setInterval(checkNewDay,60000);
+
+if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
+  navigator.serviceWorker.register('sw.js').catch(function(){});
+}
+render();
+})();
+</script>
+</body>
+</html>
